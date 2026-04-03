@@ -200,7 +200,7 @@ end
 We run each (uncertainty, policy) pair through the model individually and collect the outcomes.
 
 ```{julia}
-#| output: false
+
 results_vec = map(1:n_scenarios) do i
     r = explore(config, scenarios[i:i], [policies[i]])
     (
@@ -214,6 +214,8 @@ end
 total_costs = [r.total_cost for r in results_vec]
 total_investments = [r.total_investment for r in results_vec]
 total_losses = [r.total_loss for r in results_vec]
+println("results_vec length = ", length(results_vec))
+println("total_costs length = ", length(total_costs))
 ```
 
 ### Policy-Cost Landscape
@@ -222,8 +224,6 @@ The scatter plot below shows total cost for each run in policy space.
 Each point is one (uncertainty, policy) pair — the scatter around any policy reflects variation due to the sampled climate parameters.
 
 ```{julia}
-#| label: fig-policy-cost
-#| fig-cap: "Total cost for each (uncertainty, policy) pair, plotted in policy space. Points higher and to the right (large heightening, done early) tend to have higher investment cost but lower expected losses."
 let
     t_h_vals = [SimOptDecisions.value(p.t_heighten) for p in policies]
     u_vals = [SimOptDecisions.value(p.u_heighten) for p in policies]
@@ -264,6 +264,11 @@ benchmark_policy = EijgenraamPolicy(; t_heighten=0.0, u_heighten=100.0)
 ref_result = explore(config, [ref_scenario], [benchmark_policy])
 cost_budget = Array(ref_result.total_cost)[1, 1]
 println("Cost budget: $(round(cost_budget; digits=0)) M€  (benchmark policy under reference scenario)")
+
+failures = total_costs .> cost_budget
+n_fail = sum(failures)
+
+println("$(n_fail) of $(n_scenarios) total runs exceed the budget ($(round(100 * n_fail / n_scenarios; digits=1))%)")
 ```
 
 ::: {.callout-note}
@@ -278,21 +283,72 @@ The choice shapes which conditions PRIM finds — we'll return to this below.
 *The cost budget above was computed for a specific benchmark policy ($u = 100$ cm, $t = 0$) and reference scenario ($\alpha = 0.05$, $\eta = 0.8$).*
 *Try changing one of these choices — use a stricter benchmark (e.g., $u = 150$ cm), a different reference climate, or define failure some other way entirely.*
 *Re-run the failure labeling and report: how many runs are now labeled failures?*
-*In 2–3 sentences, how might a different failure definition change what PRIM finds?*
+*In 2–3 sentences, how might a different failure definition change what PRIM finds?* Ans: For the baseline case, failure was 684 out of 1000 (68.4%), budget was 672 M, for case 1: u =150 cm, total failues were 261 (26.1%) with budget 1285M, for case 2, with alpha=0.080, total failure 713, which is 71.3%, total budget 649M, for case 3 with eta= 1.5 cm/year, 220 out of 1000 failed, budget = 1412 M.
+
+So, the takeaway message is that, for case 1, heightening dike, doubled the budget from the abse case, and fewer runs got to cross threshold and also the failures reduced from 684 to 261. For, case 2, budget decreased compared to base case and failure increased. For the last case, I have increased sea level rise, and total budget increased by more than 50% compared to base case. So based on what we call a failure, the number of failure case changes.
 :::
 
 ```{julia}
-#| output: false
-# Your code here
+
+ref_scenario = EijgenraamScenario(;
+    P0=P0_fixed,
+    alpha=0.05,   # midpoint of [0.025, 0.075]
+    eta=0.8,      # midpoint of [0.4, 1.2]
+    V0=V0_fixed,
+    delta=delta_fixed,
+)
+benchmark_policy = EijgenraamPolicy(; t_heighten=0.0, u_heighten=150.0)
+ref_result = explore(config, [ref_scenario], [benchmark_policy])
+cost_budget = Array(ref_result.total_cost)[1, 1]
+println("Cost budget: $(round(cost_budget; digits=0)) M€  (benchmark policy under reference scenario)")
+
+failures = total_costs .> cost_budget
+n_fail = sum(failures)
+
+println("$(n_fail) of $(n_scenarios) total runs exceed the budget ($(round(100 * n_fail / n_scenarios; digits=1))%)")
 ```
 
+```{julia}
+ref_scenario = EijgenraamScenario(;
+    P0=P0_fixed,
+    alpha=0.080,   # midpoint of [0.025, 0.075]
+    eta=0.8,      # midpoint of [0.4, 1.2]
+    V0=V0_fixed,
+    delta=delta_fixed,
+)
+benchmark_policy = EijgenraamPolicy(; t_heighten=0.0, u_heighten=100.0)
+ref_result = explore(config, [ref_scenario], [benchmark_policy])
+cost_budget = Array(ref_result.total_cost)[1, 1]
+println("Cost budget: $(round(cost_budget; digits=0)) M€  (benchmark policy under reference scenario)")
 
+failures = total_costs .> cost_budget
+n_fail = sum(failures)
+
+println("$(n_fail) of $(n_scenarios) total runs exceed the budget ($(round(100 * n_fail / n_scenarios; digits=1))%)")
+```
 ### Outcome Classification
 
 ```{julia}
+ref_scenario = EijgenraamScenario(;
+    P0=P0_fixed,
+    alpha=0.05,   # midpoint of [0.025, 0.075]
+    eta=1.5,      # midpoint of [0.4, 1.2]
+    V0=V0_fixed,
+    delta=delta_fixed,
+)
+benchmark_policy = EijgenraamPolicy(; t_heighten=0.0, u_heighten=100.0)
+ref_result = explore(config, [ref_scenario], [benchmark_policy])
+cost_budget = Array(ref_result.total_cost)[1, 1]
+println("Cost budget: $(round(cost_budget; digits=0)) M€  (benchmark policy under reference scenario)")
+
 failures = total_costs .> cost_budget
 n_fail = sum(failures)
-println("$(n_fail) of $(n_scenarios) runs exceed the budget ($(round(100 * n_fail / n_scenarios; digits=1))%)")
+
+println("$(n_fail) of $(n_scenarios) total runs exceed the budget ($(round(100 * n_fail / n_scenarios; digits=1))%)")
+
+```
+```{julia}
+
 ```
 
 ### Input Matrix
@@ -360,7 +416,7 @@ A good starting point is a box with density above 70% and coverage above 50%.
 
 ```{julia}
 # Find a box with density > 0.7 (or the last box if none qualify)
-good_idx = findfirst(b -> b.density > 0.7, trajectory)
+good_idx = findfirst(b -> b.density > 0.7 && b.coverage > 0.5, trajectory)
 if good_idx === nothing
     good_idx = length(trajectory)
 end
@@ -387,6 +443,8 @@ Use the parameter names and bounds from the box.*
 
 *Does the box restrict climate parameters, policy levers, or both?
 What does that tell you about what drives high cost in this model?*
+
+Ans: Total acost is unacceptably high when t_heighten ≤ 38.5 AND u_heighten ≥ 185. Box 28, is only for policy levers, no climate aprameters. This means policy decision drives high cost in the model.
 :::
 
 
@@ -402,21 +460,36 @@ let
     pass_mask = .!failures
     fail_mask = failures
 
-    fig = Figure(; size=(900, 400))
+    fig = Figure(; size = (900, 400))
+
     positions = [(1, 1), (1, 2), (1, 3), (1, 4)]
+
     for (j, (name, pos)) in enumerate(zip(param_names, positions))
         row, col = pos
-        ax = Axis(fig[row, col]; xlabel=name, ylabel="Density")
-        hist!(ax, X[pass_mask, j]; bins=20, normalization=:pdf, color=(:steelblue, 0.6))
-        hist!(ax, X[fail_mask, j]; bins=20, normalization=:pdf, color=(:tomato, 0.6))
+        ax = Axis(fig[row, col]; xlabel = name, ylabel = "Density")
+
+        hist!(ax, X[pass_mask, j];
+            bins = 20,
+            normalization = :pdf,
+            color = (:steelblue, 0.6)
+        )
+
+        hist!(ax, X[fail_mask, j];
+            bins = 20,
+            normalization = :pdf,
+            color = (:tomato, 0.6)
+        )
     end
+
     Legend(
         fig[2, 1:4],
-        [PolyElement(; color=(:steelblue, 0.6)), PolyElement(; color=(:tomato, 0.6))],
+        [PolyElement(; color = (:steelblue, 0.6)),
+         PolyElement(; color = (:tomato, 0.6))],
         ["Pass (below median cost)", "Fail (above median cost)"];
-        orientation=:horizontal,
-        tellwidth=false,
+        orientation = :horizontal,
+        tellwidth = false
     )
+
     fig
 end
 ```
@@ -430,11 +503,57 @@ end
 *Does the separation you see match what PRIM identified?*
 *Why do some parameters separate the groups while others don't?*
 
+Ans: For comparison, I choose u_heightening and t_heightening. The plot shows that when u_heighten is high, most points are failures, and when it is low, most points are passing (if we take vertical slices). So u_heighten is an important variable. This matches PRIM. The variable t_heighten is less important because both pass and fail points are mixed at all values (if we take horizontal slice).
 We'll share these plots in class — think about which pair of parameters makes the clearest picture.
 :::
 
 ```{julia}
-# Your code here
+
+```
+```{julia}
+
+```
+
+```{julia}
+
+```
+```{julia}
+
+failures = total_costs .> cost_budget
+let
+    pass_mask = .!failures
+    fail_mask = failures
+
+    fig = Figure(; size = (700, 500))
+
+    ax = Axis(
+        fig[1, 1];
+        xlabel = "u_heighten (cm)",
+        ylabel = "t_heighten (years)",
+        title = "Pass vs Fail Comparison"
+    )
+
+    scatter!(
+        ax,
+        X[pass_mask, 4], X[pass_mask, 3];
+        color = (:dodgerblue, 0.6),
+        markersize = 6,
+        marker = :circle,
+        label = "Pass"
+    )
+
+    scatter!(
+        ax,
+        X[fail_mask, 4], X[fail_mask, 3];
+        color = (:orange, 0.6),
+        markersize = 6,
+        marker = :diamond,
+        label = "Fail"
+    )
+
+    axislegend(ax)
+    fig
+end
 ```
 
 
